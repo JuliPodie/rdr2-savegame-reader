@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/Rdr2SaveResearch/Rdr2SaveResearch.csproj" />
+  <Project Path="tests/Rdr2SaveResearch.SelfTest/Rdr2SaveResearch.SelfTest.csproj" />
+</Solution>
