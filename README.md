@@ -12,6 +12,8 @@ a general-purpose save merger.
 - discovers self-describing PSO frames, blocks, structures, and known hashes;
 - statically extracts confidence-tagged labels/hashes from an editor resource
   blob without loading an assembly or deserializing its object graph;
+- statically indexes NativeDB-style `natives.h` declarations as a separate,
+  provenance-hashed catalog without compiling or invoking them;
 - generates controlled-delta reports for one isolated game/editor change;
 - produces a new throwaway test clone only when explicitly confirmed.
 
@@ -49,6 +51,15 @@ dotnet run --project .\src\Rdr2SaveResearch -c Release -- inspect `
 dotnet run --project .\src\Rdr2SaveResearch -c Release -- diff `
   --before .\copies\before.sav --after .\copies\after.sav `
   --output .\reports\delta.json
+
+# Index a locally supplied natives.h as text only. This does not execute it.
+dotnet run --project .\src\Rdr2SaveResearch -c Release -- extract-native-catalog `
+  --input $env:USERPROFILE\Downloads\natives.h --output .\reports\native-catalog.json
+
+# Use every native declaration in that catalog when inspecting a save copy.
+dotnet run --project .\src\Rdr2SaveResearch -c Release -- inspect `
+  --save .\copies\SRDR30000 --native-catalog .\reports\native-catalog.json `
+  --output .\reports\slot-report.json
 ```
 
 Run `dotnet run --project .\src\Rdr2SaveResearch -- help` for every command.

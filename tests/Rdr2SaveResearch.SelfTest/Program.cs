@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Buffers.Binary;
 using Rdr2SaveResearch.Persistence;
 
 namespace Rdr2SaveResearch.SelfTest;
@@ -27,15 +28,27 @@ internal static class Program
                 var after = Path.Combine(root, "after.sav");
                 var recipient = Path.Combine(root, "recipient.sav");
                 var output = Path.Combine(root, "clone.sav");
+                var nativeHeader = Path.Combine(root, "natives.h");
                 await File.WriteAllBytesAsync(before, encrypted);
                 await File.WriteAllBytesAsync(after, Rdr2PcSaveCodec.Encode(changed));
                 await File.WriteAllBytesAsync(recipient, encrypted);
                 var clone = await CampaignCloneExperiment.CreateAsync(before, after, recipient, output, CampaignCloneExperiment.ConfirmationPhrase);
                 Assert(clone.RecipientBeforeExactlyMatchesHostBefore && File.Exists(output), "new-file clone");
+                await File.WriteAllTextAsync(nativeHeader, """
+                    namespace PLAYER
+                    {
+                        NATIVE_DECL Ped PLAYER_PED_ID() { return invoke<Ped>(0xD80958FC74E988A6); }
+                    }
+                    """);
+                var nativeCatalog = await NativeHeaderCatalogExtractor.ExtractAsync(nativeHeader);
+                Assert(nativeCatalog.Entries.Count == 1 && nativeCatalog.Entries[0].Name == "PLAYER_PED_ID" && nativeCatalog.Entries[0].Hash == "D80958FC74E988A6", "native header catalog");
+                var nativeDocument = Rdr2PcSaveCodec.Decode(Encrypt(WithNativeHash(MinimalDecoded())));
+                var nativeReport = Rdr2RsavContentAnalyzer.Analyze(nativeDocument, nativeCatalog.Entries);
+                Assert(nativeReport.References.Single().Name == "PLAYER_PED_ID", "catalog-driven native reference");
             }
             finally { Directory.Delete(root, recursive: true); }
 
-            Console.WriteLine("SELFTEST total=4 passed=4 failed=0");
+            Console.WriteLine("SELFTEST total=6 passed=6 failed=0");
             return 0;
         }
         catch (Exception exception)
@@ -54,6 +67,13 @@ internal static class Program
     }
 
     private static byte[] WithChange(byte[] bytes) { bytes[0x11F] = 1; return bytes; }
+
+    private static byte[] WithNativeHash(byte[] bytes)
+    {
+        Array.Resize(ref bytes, 0x130);
+        BinaryPrimitives.WriteUInt64LittleEndian(bytes.AsSpan(0x120, 8), 0xD80958FC74E988A6);
+        return bytes;
+    }
 
     private static byte[] Encrypt(byte[] decoded)
     {

@@ -23,6 +23,7 @@ internal static class Program
                 "diff" => await DiffAsync(options),
                 "schema" => await SchemaAsync(options),
                 "extract-editor-catalog" => await ExtractEditorCatalogAsync(options),
+                "extract-native-catalog" => await ExtractNativeCatalogAsync(options),
                 "analyze-control" => await AnalyzeControlAsync(options),
                 "analyze-campaign" => await AnalyzeCampaignAsync(options),
                 "create-test-clone" => await CreateTestCloneAsync(options),
@@ -49,7 +50,8 @@ internal static class Program
     private static async Task<int> InspectAsync(Options options)
     {
         var document = Rdr2PcSaveCodec.Decode(await File.ReadAllBytesAsync(options.Required("save")));
-        var report = Rdr2RsavContentAnalyzer.Analyze(document);
+        var nativeCatalog = await LoadNativeCatalogAsync(options);
+        var report = Rdr2RsavContentAnalyzer.Analyze(document, nativeCatalog?.Entries);
         await SaveNewJsonAsync(options.Required("output"), report);
         Console.WriteLine($"RSAV_REPORT_READY={Path.GetFullPath(options.Required("output"))} regions={report.Regions.Count} tags={report.Tags.Count} references={report.References.Count} psoFrames={report.PsoFrames.Count} strings={report.Strings.Count}");
         return 0;
@@ -59,9 +61,10 @@ internal static class Program
 
     private static async Task<int> DiffAsync(Options options)
     {
+        var nativeCatalog = await LoadNativeCatalogAsync(options);
         var before = Rdr2PcSaveCodec.Decode(await File.ReadAllBytesAsync(options.Required("before")));
         var after = Rdr2PcSaveCodec.Decode(await File.ReadAllBytesAsync(options.Required("after")));
-        var report = Rdr2RsavContentDiffer.Compare(before, after);
+        var report = Rdr2RsavContentDiffer.Compare(before, after, nativeCatalog?.Entries);
         await SaveNewJsonAsync(options.Required("output"), report);
         Console.WriteLine($"RSAV_DIFF_READY={Path.GetFullPath(options.Required("output"))} changedRegions={report.Regions.Count(static x => !x.IsByteIdentical)} changedParts={report.Parts.Count(static x => !x.IsByteIdentical)} changedSemanticFields={report.SemanticFieldChanges.Count} referenceCountChanges={report.ReferenceCountChanges.Count} tagCountChanges={report.TagCountChanges.Count}");
         Console.WriteLine("Read-only result: differences are evidence, not semantic or safe-to-write fields.");
@@ -74,6 +77,15 @@ internal static class Program
         await EditorResourceCatalogExtractor.SaveAsync(options.Required("output"), catalog);
         Console.WriteLine($"EDITOR_RESOURCE_CATALOG_READY={Path.GetFullPath(options.Required("output"))} hashEvidence={catalog.HashEvidence.Count} labels={catalog.LabelEvidence.Count} associations={catalog.Associations.Count}");
         Console.WriteLine("Static extraction only: resource blobs are never loaded as assemblies or deserialized.");
+        return 0;
+    }
+
+    private static async Task<int> ExtractNativeCatalogAsync(Options options)
+    {
+        var catalog = await NativeHeaderCatalogExtractor.ExtractAsync(options.Required("input"));
+        await SaveNewJsonAsync(options.Required("output"), catalog);
+        Console.WriteLine($"NATIVE_HEADER_CATALOG_READY={Path.GetFullPath(options.Required("output"))} entries={catalog.Entries.Count} sourceSha256={catalog.SourceSha256}");
+        Console.WriteLine("Static extraction only: natives.h is treated as text and no game native is invoked.");
         return 0;
     }
 
@@ -112,6 +124,11 @@ internal static class Program
         return await EditorResourceCatalogExtractor.LoadHighConfidenceAnnotationsAsync(path);
     }
 
+    private static async Task<NativeHeaderCatalog?> LoadNativeCatalogAsync(Options options) =>
+        options.Optional("native-catalog") is { } path
+            ? await NativeHeaderCatalogExtractor.LoadAsync(path)
+            : null;
+
     private static async Task SaveNewJsonAsync<T>(string path, T value)
     {
         var output = Path.GetFullPath(path);
@@ -126,9 +143,10 @@ internal static class Program
         RDR2 Save Research MVP — offline research tooling for PC Story Mode SRDR saves
 
           dotnet run --project src/Rdr2SaveResearch -- verify --save <save-copy>
-          dotnet run --project src/Rdr2SaveResearch -- inspect --save <save-copy> --output <new-report.json>
-          dotnet run --project src/Rdr2SaveResearch -- diff --before <save-copy> --after <save-copy> --output <new-report.json>
+          dotnet run --project src/Rdr2SaveResearch -- inspect --save <save-copy> --output <new-report.json> [--native-catalog <native-catalog.json>]
+          dotnet run --project src/Rdr2SaveResearch -- diff --before <save-copy> --after <save-copy> --output <new-report.json> [--native-catalog <native-catalog.json>]
           dotnet run --project src/Rdr2SaveResearch -- extract-editor-catalog --input <decoded-resource-bin> --output <new-catalog.json>
+          dotnet run --project src/Rdr2SaveResearch -- extract-native-catalog --input <natives.h> --output <new-catalog.json>
           dotnet run --project src/Rdr2SaveResearch -- analyze-control --before <save-copy> --after <save-copy> --label <one-change-description> --output <new-report.json> [--catalog <catalog.json>]
           dotnet run --project src/Rdr2SaveResearch -- analyze-campaign --before <save-copy> --medal-only <save-copy> --after <save-copy> --output <new-report.json> [--catalog <catalog.json>]
           dotnet run --project src/Rdr2SaveResearch -- create-test-clone --host-before <save-copy> --host-after <save-copy> --recipient-before <save-copy> --output <new-save-copy> --confirm CREATE_TEST_CLONE

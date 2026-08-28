@@ -9,13 +9,14 @@ public static class Rdr2RsavContentDiffer
 {
     public static Rdr2RsavContentDiffReport Compare(
         Rdr2PcSaveDocument before,
-        Rdr2PcSaveDocument after)
+        Rdr2PcSaveDocument after,
+        IReadOnlyList<NativeHeaderEntry>? nativeCatalog = null)
     {
         ArgumentNullException.ThrowIfNull(before);
         ArgumentNullException.ThrowIfNull(after);
 
-        var beforeReport = Rdr2RsavContentAnalyzer.Analyze(before);
-        var afterReport = Rdr2RsavContentAnalyzer.Analyze(after);
+        var beforeReport = Rdr2RsavContentAnalyzer.Analyze(before, nativeCatalog);
+        var afterReport = Rdr2RsavContentAnalyzer.Analyze(after, nativeCatalog);
         return new Rdr2RsavContentDiffReport(
             beforeReport.SaveTitle,
             afterReport.SaveTitle,
